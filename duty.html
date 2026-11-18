@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex">
+<title>当直・日直入力</title>
+<style>
+  :root {
+    --bg: #f5f5f8; --card: #ffffff; --text: #1f2328; --muted: #6b7280; --line: #e5e7eb;
+    --sun: #d93025; --sat: #1a73e8; --duty: #6b5bb5; --duty-bg: #ece9f7; --day: #b26a00; --day-bg: #fff3df;
+    --primary: #6b5bb5; --ok-bg: #e6f4ea; --ok: #137333; --err-bg: #fdecea; --err: #b3261e;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 16px 16px 120px; }
+  h1 { font-size: 18px; margin: 4px 0 8px; }
+  h2 { font-size: 15px; margin: 22px 0 8px; }
+  .banner { background: var(--duty-bg); color: #3b2f7a; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 10px; line-height: 1.6; }
+  .banner.done { background: var(--ok-bg); color: var(--ok); }
+  .card { background: var(--card); border-radius: 12px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .dow { text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 0; }
+  .dow.sun { color: var(--sun); } .dow.sat { color: var(--sat); }
+  .day { min-height: 74px; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 4px 3px;
+    display: flex; flex-direction: column; gap: 2px; cursor: pointer; user-select: none; min-width: 0; }
+  .day:focus-visible { outline: 3px solid var(--primary); outline-offset: 1px; }
+  .day.sel { border: 2px solid var(--primary); }
+  .dn { font-size: 14px; font-weight: 700; line-height: 1.1; }
+  .day.sun .dn, .day.hol .dn { color: var(--sun); } .day.sat .dn { color: var(--sat); }
+  .hn { font-size: 8px; color: var(--sun); line-height: 1.1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .tag { font-size: 10px; line-height: 1.3; border-radius: 4px; padding: 1px 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .tag.t { background: var(--duty-bg); color: var(--duty); }
+  .tag.n { background: var(--day-bg); color: var(--day); }
+  .empty { min-height: 74px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 8px 2px; line-height: 1.6; }
+
+  .list { background: var(--card); border-radius: 12px; padding: 4px 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .row { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .row:last-child { border-bottom: 0; }
+  .row .nm { font-weight: 700; min-width: 6.5em; }
+  .row .ds { flex: 1; min-width: 0; line-height: 1.6; }
+  .row .ct { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .row.zero .ds { color: var(--muted); }
+
+  .actions { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,.96); border-top: 1px solid var(--line);
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .actions .in { max-width: 560px; margin: 0 auto; display: flex; gap: 8px; }
+  .btn { flex: 1; border: 0; border-radius: 10px; padding: 13px 10px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.sub { background: #fff; color: var(--text); border: 1px solid var(--line); }
+  .btn:disabled { opacity: .5; }
+  .msg { margin-top: 14px; padding: 12px; border-radius: 8px; font-size: 14px; white-space: pre-wrap; line-height: 1.6; }
+  .msg.ok { background: var(--ok-bg); color: var(--ok); }
+  .msg.err { background: var(--err-bg); color: var(--err); }
+
+  /* 1日分の編集パネル（画面下からせり上がる） */
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,.15); padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 10; }
+  .sheet .in { max-width: 560px; margin: 0 auto; }
+  .sheet h3 { margin: 0 0 10px; font-size: 16px; }
+  .slot { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .slot select { flex: 1; min-width: 0; font-size: 16px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: #fff; padding: 10px 12px; font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; }
+  .seg button.on.t { background: var(--duty); color: #fff; }
+  .seg button.on.n { background: var(--day); color: #fff; }
+  .seg button:disabled { opacity: .4; }
+
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+  .dialog { background: #fff; width: 100%; max-width: 560px; max-height: 85vh; overflow: auto; border-radius: 16px 16px 0 0; padding: 18px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .dialog h3 { margin: 0 0 8px; font-size: 16px; }
+  .dialog p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .dialog .in { display: flex; gap: 8px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><h1>当直・日直入力</h1><p class="hint">読み込み中…</p></div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="in">
+    <h3 id="sheetTitle"></h3>
+    <div class="slot" data-i="0">
+      <select id="s0" aria-label="1人目の医師"></select>
+      <div class="seg"><button type="button" class="t" data-type="当直">当直</button><button type="button" class="n" data-type="日直">日直</button></div>
+    </div>
+    <div class="slot" data-i="1">
+      <select id="s1" aria-label="2人目の医師"></select>
+      <div class="seg"><button type="button" class="t" data-type="当直">当直</button><button type="button" class="n" data-type="日直">日直</button></div>
+    </div>
+    <p class="hint" style="margin:0 0 10px">当直・日直に入っている<b>オンコール担当の医師だけ</b>選んでください（他科の医師は不要）。1日2名まで。</p>
+    <button class="btn primary" id="sheetClose" style="width:100%">OK</button>
+  </div>
+</div>
+
+<div class="overlay" id="confirmBox" hidden>
+  <div class="dialog">
+    <h3>この内容で確定しますか？</h3>
+    <div class="list" id="confirmList"></div>
+    <p>確定すると、NG日が全員そろっている場合はオンコール表を作成し、まず管理者に確認用の表をLINEで送ります（OK後に担当医師へ送信）。そろっていない場合は、未提出の医師にリマインドを送ります。夜間（22時〜7時）のLINEは朝7時に送ります。</p>
+    <div class="in">
+      <button class="btn sub" id="confirmBack">戻る</button>
+      <button class="btn primary" id="confirmGo">確定する</button>
+    </div>
+  </div>
+</div>
+
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="app.js"></script>
+<script>
+  let DATA;
+  const WD = ['日', '月', '火', '水', '木', '金', '土'];
+  const app = document.getElementById('app');
+
+  start();
+
+  async function start() {
+    const q = await Page.init();
+    if (!q.duty || !Page.hasApi()) {
+      showError('リンクが正しくありません。Botに「当直入力」と送ると新しいリンクが届きます。');
+      return;
+    }
+    try {
+      DATA = await Page.get({ api: 'duty', duty: q.duty });
+    } catch (e) {
+      showError(Page.errText(e));
+      return;
+    }
+    if (DATA.error) showError(DATA.error);
+    else init();
+  }
+
+  function showError(text) {
+    app.innerHTML = '<h1>当直・日直入力</h1><div class="msg err"></div>';
+    app.querySelector('.msg').textContent = text;
+  }
+
+  function init() {
+    // 日 → [{name, type}]（最大2名）
+    const byDay = {};
+    // 選択肢＝名簿の医師（シートに名簿外の医師が入っていれば、それも表示）
+    const names = DATA.members.slice();
+    // 画面を開いた（前回保存した）時点の内容。保存時に「この画面で変えた部分」だけを反映するために送る
+    let base = [];
+    function load(entries) {
+      DATA.days.forEach(d => { byDay[d.d] = []; });
+      entries.forEach(e => {
+        if (byDay[e.day] && byDay[e.day].length < 2) byDay[e.day].push({ name: e.name, type: e.type });
+        if (names.indexOf(e.name) === -1) names.push(e.name);
+      });
+      base = entries.map(e => ({ day: e.day, name: e.name, type: e.type }));
+    }
+    load(DATA.entries);
+    const dayInfo = {};
+    DATA.days.forEach(d => { dayInfo[d.d] = d; });
+    const isHoliday = d => d.dow === 0 || d.dow === 6 || d.hol;
+    let current = null;
+    let confirmed = DATA.confirmed;
+
+    app.innerHTML =
+      '<h1>' + DATA.year + '年' + DATA.month + '月　当直・日直入力</h1>' +
+      '<div class="who" id="who" style="color:var(--muted);font-size:13px;margin:-4px 0 8px"></div>' +
+      '<div class="banner" id="banner"></div>' +
+      '<div class="card"><div class="grid" id="grid"></div></div>' +
+      '<p class="hint">日付をタップして医師を選びます。<b>下の一覧を元の当直表と見比べて</b>、漏れがないか確認してから' +
+      (DATA.isAdmin ? '確定してください。' : '保存してください。') + '</p>' +
+      '<h2>医師ごとの当直・日直 <span id="total" style="font-weight:400;color:var(--muted);font-size:13px"></span></h2>' +
+      '<div class="list" id="summary"></div>' +
+      '<div id="msg"></div>' +
+      '<div class="actions"><div class="in">' +
+      (DATA.isAdmin
+        ? '  <button class="btn sub" id="save">保存</button>' +
+          '  <button class="btn primary" id="confirm">内容を確認して確定</button>'
+        : '  <button class="btn primary" id="save">保存</button>') +
+      '</div></div>';
+
+    document.getElementById('who').textContent =
+      (DATA.userLabel || '') + (DATA.isAdmin ? '（管理者：確定できます）' : '');
+
+    function renderBanner() {
+      const b = document.getElementById('banner');
+      b.className = 'banner' + (confirmed ? ' done' : '');
+      if (confirmed) {
+        b.textContent = DATA.isAdmin
+          ? '確定済みです。変更する場合は、直して保存し、もう一度「確定」してください。'
+          : '管理者が確定済みです。変更して保存すると確定が取り消され、管理者に再確認の連絡が届きます。';
+      } else {
+        b.textContent = DATA.isAdmin
+          ? 'オンコール担当の医師の当直・日直を入力してください（他科の医師は不要）。先生方が入力・保存した分もここにまとまります。そろったら確定してください。'
+          : DATA.isClerk
+          ? 'オンコール担当の医師の当直・日直を入力して「保存」してください（他科の医師は不要）。先生方が入力した分も同じカレンダーに表示されます。確定は管理者が行います。'
+          : 'ご自身の当直・日直を入力して「保存」してください。他の先生の入力も同じカレンダーに表示されます。確定は管理者が行います。';
+      }
+    }
+
+    // --- カレンダー ---
+    const grid = document.getElementById('grid');
+    WD.forEach((w, i) => {
+      const el = document.createElement('div');
+      el.className = 'dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : '');
+      el.textContent = w;
+      grid.appendChild(el);
+    });
+    for (let i = 0; i < DATA.days[0].dow; i++) {
+      const e = document.createElement('div'); e.className = 'empty'; grid.appendChild(e);
+    }
+    const cells = {};
+    DATA.days.forEach(d => {
+      const el = document.createElement('div');
+      el.className = 'day' + (d.dow === 0 ? ' sun' : d.dow === 6 ? ' sat' : '') + (d.hol ? ' hol' : '');
+      el.tabIndex = 0;
+      el.setAttribute('role', 'button');
+      el.addEventListener('click', () => openSheet(d.d));
+      el.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openSheet(d.d); } });
+      grid.appendChild(el);
+      cells[d.d] = el;
+      renderCell(d.d);
+    });
+
+    function renderCell(day) {
+      const d = dayInfo[day], el = cells[day];
+      el.innerHTML = '';
+      const dn = document.createElement('span'); dn.className = 'dn'; dn.textContent = day; el.appendChild(dn);
+      if (d.name) { const hn = document.createElement('span'); hn.className = 'hn'; hn.textContent = d.name; el.appendChild(hn); }
+      byDay[day].forEach(e => {
+        const t = document.createElement('span');
+        t.className = 'tag ' + (e.type === '日直' ? 'n' : 't');
+        t.textContent = (e.type === '日直' ? '日 ' : '当 ') + e.name;
+        el.appendChild(t);
+      });
+      el.setAttribute('aria-label', DATA.month + '月' + day + '日 ' + (byDay[day].map(e => e.name + e.type).join('、') || '未入力'));
+    }
+
+    // --- 医師ごとの一覧（元の当直表と照合するため） ---
+    function collect() {
+      const map = {};
+      names.forEach(n => { map[n] = []; });
+      DATA.days.forEach(d => byDay[d.d].forEach(e => { (map[e.name] = map[e.name] || []).push({ day: d.d, type: e.type }); }));
+      return map;
+    }
+    function fillList(el) {
+      const map = collect();
+      el.innerHTML = '';
+      Object.keys(map).forEach(n => {
+        const list = map[n];
+        const row = document.createElement('div');
+        row.className = 'row' + (list.length ? '' : ' zero');
+        const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = n;
+        const ds = document.createElement('span'); ds.className = 'ds';
+        ds.textContent = list.length
+          ? list.map(x => DATA.month + '/' + x.day + '(' + WD[dayInfo[x.day].dow] + ')' + (x.type === '日直' ? '日直' : '当直')).join('、')
+          : 'なし';
+        const ct = document.createElement('span'); ct.className = 'ct'; ct.textContent = list.length + '回';
+        row.append(nm, ds, ct);
+        el.appendChild(row);
+      });
+    }
+    function renderSummary() {
+      fillList(document.getElementById('summary'));
+      const total = DATA.days.reduce((s, d) => s + byDay[d.d].length, 0);
+      document.getElementById('total').textContent = '（合計 ' + total + '件）';
+    }
+
+    // --- 1日分の編集パネル ---
+    const sheet = document.getElementById('sheet');
+    const slots = Array.from(sheet.querySelectorAll('.slot'));
+    slots.forEach((slot, i) => {
+      const sel = slot.querySelector('select');
+      sel.innerHTML = '<option value="">（なし）</option>' + names.map(n => '<option></option>').join('');
+      names.forEach((n, j) => { sel.options[j + 1].value = n; sel.options[j + 1].textContent = n; });
+      sel.addEventListener('change', () => applySlots(i));
+      slot.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+        slot.dataset.type = b.dataset.type;
+        applySlots(-1);
+      }));
+    });
+    function defaultType(day, i) {
+      return isHoliday(dayInfo[day]) && i === 0 ? '日直' : '当直';
+    }
+    function openSheet(day) {
+      if (current && cells[current]) cells[current].classList.remove('sel');
+      current = day;
+      cells[day].classList.add('sel');
+      const d = dayInfo[day];
+      document.getElementById('sheetTitle').textContent =
+        DATA.month + '/' + day + '(' + WD[d.dow] + ')' + (d.name ? '　' + d.name : '') + (isHoliday(d) ? '　休日' : '');
+      slots.forEach((slot, i) => {
+        const e = byDay[day][i];
+        slot.querySelector('select').value = e ? e.name : '';
+        slot.dataset.type = e ? e.type : defaultType(day, i);
+      });
+      refreshSeg();
+      sheet.hidden = false;
+    }
+    function refreshSeg() {
+      slots.forEach(slot => {
+        const has = !!slot.querySelector('select').value;
+        slot.querySelectorAll('.seg button').forEach(b => {
+          b.disabled = !has;
+          b.classList.toggle('on', has && b.dataset.type === slot.dataset.type);
+        });
+      });
+    }
+    function applySlots(changed) {
+      const list = [];
+      slots.forEach((slot, i) => {
+        const name = slot.querySelector('select').value;
+        if (!name) return;
+        if (list.some(x => x.name === name)) { // 同じ医師を2回選んだら後から選んだ方を外す
+          slot.querySelector('select').value = '';
+          return;
+        }
+        if (i === changed && !byDay[current][i]) slot.dataset.type = defaultType(current, i);
+        list.push({ name: name, type: slot.dataset.type || '当直' });
+      });
+      byDay[current] = list;
+      refreshSeg();
+      renderCell(current);
+      renderSummary();
+    }
+    document.getElementById('sheetClose').onclick = () => {
+      sheet.hidden = true;
+      if (current && cells[current]) cells[current].classList.remove('sel');
+      current = null;
+    };
+
+    // --- 保存・確定 ---
+    function flatten() {
+      const out = [];
+      DATA.days.forEach(d => byDay[d.d].forEach(e => out.push({ day: d.d, name: e.name, type: e.type })));
+      return out;
+    }
+    const box = document.getElementById('confirmBox');
+    document.getElementById('save').onclick = () => { document.getElementById('sheetClose').click(); submit(false); };
+    if (DATA.isAdmin) {
+      document.getElementById('confirm').onclick = () => {
+        document.getElementById('sheetClose').click();
+        fillList(document.getElementById('confirmList'));
+        box.hidden = false;
+      };
+    }
+    document.getElementById('confirmBack').onclick = () => { box.hidden = true; };
+    document.getElementById('confirmGo').onclick = () => { box.hidden = true; submit(true); };
+
+    async function submit(isConfirm) {
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(b => b.disabled = true);
+      showMsg('ok', isConfirm ? '確定しています…（表の作成も行う場合は少し時間がかかります）' : '保存しています…');
+      let res;
+      try {
+        res = await Page.post({ api: 'duty', duty: DATA.token, entries: flatten(), confirm: isConfirm, base: base, key: DATA.key });
+      } catch (e) {
+        res = { ok: false, error: Page.errText(e) };
+      }
+      buttons.forEach(b => b.disabled = false);
+      if (!res.ok) {
+        refreshSeg();
+        showMsg('err', '保存できませんでした：' + (res.error || '不明なエラー'));
+        return;
+      }
+      // 他の先生の入力も含めた最新の内容で表示し直す
+      load(res.entries || []);
+      DATA.days.forEach(d => renderCell(d.d));
+      renderSummary();
+      refreshSeg();
+      confirmed = res.confirmed;
+      renderBanner();
+      showMsg('ok', res.message);
+    }
+    function showMsg(type, text) {
+      const m = document.getElementById('msg');
+      m.className = 'msg ' + type;
+      m.textContent = text;
+      m.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    renderBanner();
+    renderSummary();
+  }
+</script>
+</body>
+</html>

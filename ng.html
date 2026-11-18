@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex">
+<title>オンコールNG日入力</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1f2328; --muted: #6b7280; --line: #e5e7eb;
+    --sun: #d93025; --sat: #1a73e8; --ng: #d93025; --ng-bg: #fdecea; --primary: #06c755;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 18px; margin: 4px 0 2px; }
+  .who { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+  .banner { background: #e8f0fe; color: #174ea6; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+  .card { background: var(--card); border-radius: 12px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .dow { text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 0; }
+  .dow.sun { color: var(--sun); } .dow.sat { color: var(--sat); }
+  .day { position: relative; min-height: 54px; border: 1px solid var(--line); border-radius: 8px; background: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 6px;
+    font-size: 16px; font-weight: 600; cursor: pointer; user-select: none; }
+  .day.sun, .day.hol { color: var(--sun); } .day.sat { color: var(--sat); }
+  .day .hn { font-size: 9px; font-weight: 400; line-height: 1.1; margin-top: 2px; text-align: center; padding: 0 2px; }
+  .day.ng { background: var(--ng-bg); border: 2px solid var(--ng); color: var(--ng); }
+  .day.ng::after { content: "NG"; position: absolute; bottom: 3px; font-size: 10px; font-weight: 700; }
+  .empty { min-height: 54px; }
+  .summary { margin: 12px 2px; font-size: 14px; min-height: 20px; }
+  .summary b { color: var(--ng); }
+  .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 14px; font-size: 16px; font-weight: 700; margin-top: 10px; cursor: pointer; }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.sub { background: #fff; color: var(--text); border: 1px solid var(--line); }
+  .btn:disabled { opacity: .5; }
+  .row { display: flex; gap: 8px; } .row .btn { flex: 1; }
+  .msg { margin-top: 14px; padding: 12px; border-radius: 8px; font-size: 14px; display: none; white-space: pre-wrap; }
+  .msg.ok { display: block; background: #e6f4ea; color: #137333; }
+  .msg.err { display: block; background: #fdecea; color: #b3261e; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><h1>オンコールNG日入力</h1><p class="hint">読み込み中…</p></div>
+
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="app.js"></script>
+<script>
+  let DATA;
+  const WD = ['日', '月', '火', '水', '木', '金', '土'];
+  const app = document.getElementById('app');
+
+  start();
+
+  async function start() {
+    const q = await Page.init();
+    if (!q.t || !Page.hasApi()) {
+      showError('リンクが正しくありません。LINEで「NG日入力」と送ると新しいリンクが届きます。');
+      return;
+    }
+    try {
+      DATA = await Page.get({ api: 'ng', t: q.t });
+    } catch (e) {
+      showError(Page.errText(e));
+      return;
+    }
+    if (DATA.error) showError(DATA.error);
+    else render();
+  }
+
+  function showError(text) {
+    app.innerHTML = '<h1>オンコールNG日入力</h1><div class="msg err" style="display:block"></div>';
+    app.querySelector('.msg').textContent = text;
+  }
+
+  function render() {
+    const selected = new Set(DATA.selected);
+    app.innerHTML =
+      '<h1>' + DATA.year + '年' + DATA.month + '月　オンコールNG日</h1>' +
+      '<div class="who"></div>' +
+      (DATA.submitted ? '<div class="banner">提出済みの内容を表示しています。変更して再送信すると上書きされます。</div>' : '') +
+      (DATA.early && !DATA.submitted ? '<div class="banner">翌月分は依頼が届く前でも入力できます。表が作成されるまでは何度でも変更できます。</div>' : '') +
+      (DATA.deadline ? '<div class="hint" style="margin:-4px 0 10px">締切：' + escapeHtml(DATA.deadline) + '</div>' : '') +
+      '<div class="card"><div class="grid" id="grid"></div></div>' +
+      '<div class="summary" id="summary"></div>' +
+      '<button class="btn primary" id="send">選択した日をNGとして送信</button>' +
+      '<div class="row">' +
+      '  <button class="btn sub" id="none">NG日なしで送信</button>' +
+      '  <button class="btn sub" id="clear">選択をクリア</button>' +
+      '</div>' +
+      '<div class="msg" id="msg"></div>' +
+      '<button class="btn sub" id="close" hidden>閉じてLINEに戻る</button>' +
+      '<p class="hint">日付をタップするとNG／解除が切り替わります。<br>送信後はこの画面を閉じてLINEに戻ってください。</p>';
+    app.querySelector('.who').textContent = DATA.name + ' 先生';
+
+    // --- カレンダー描画 ---
+    const grid = document.getElementById('grid');
+    WD.forEach((w, i) => {
+      const el = document.createElement('div');
+      el.className = 'dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : '');
+      el.textContent = w;
+      grid.appendChild(el);
+    });
+    for (let i = 0; i < DATA.days[0].dow; i++) {
+      const e = document.createElement('div'); e.className = 'empty'; grid.appendChild(e);
+    }
+    DATA.days.forEach(d => {
+      const el = document.createElement('div');
+      el.className = 'day' + (d.dow === 0 ? ' sun' : d.dow === 6 ? ' sat' : '') + (d.hol ? ' hol' : '') +
+        (selected.has(d.d) ? ' ng' : '');
+      el.innerHTML = '<span>' + Number(d.d) + '</span>' + (d.name ? '<span class="hn"></span>' : '');
+      if (d.name) el.querySelector('.hn').textContent = d.name;
+      el.addEventListener('click', () => {
+        if (selected.has(d.d)) selected.delete(d.d); else selected.add(d.d);
+        el.classList.toggle('ng');
+        updateSummary();
+      });
+      grid.appendChild(el);
+    });
+
+    function updateSummary() {
+      const list = Array.from(selected).sort((a, b) => a - b);
+      document.getElementById('summary').innerHTML = list.length
+        ? 'NG：<b>' + list.length + '日</b>（' + list.map(x => DATA.month + '/' + x + '(' + WD[DATA.days[x - 1].dow] + ')').join('、') + '）'
+        : 'NG日は選択されていません';
+      document.getElementById('send').textContent = list.length
+        ? '選択した' + list.length + '日をNGとして送信' : '選択した日をNGとして送信';
+    }
+    updateSummary();
+
+    document.getElementById('clear').onclick = () => {
+      selected.clear();
+      grid.querySelectorAll('.day.ng').forEach(el => el.classList.remove('ng'));
+      updateSummary();
+    };
+    document.getElementById('send').onclick = () => {
+      if (!selected.size) { showMsg('err', 'NG日が選択されていません。NG日がない場合は「NG日なしで送信」を押してください。'); return; }
+      submit(Array.from(selected));
+    };
+    document.getElementById('none').onclick = () => {
+      if (selected.size && !confirm('選択中の日を解除して「NG日なし」で送信しますか？')) return;
+      submit([]);
+    };
+    document.getElementById('close').onclick = () => Page.close();
+  }
+
+  // --- サーバー（GAS）へ送信 ---
+  async function submit(days) {
+    const buttons = app.querySelectorAll('button');
+    buttons.forEach(b => b.disabled = true);
+    showMsg('ok', '送信中です…（全員そろった場合は表の作成も行うため、少し時間がかかります）');
+    let res;
+    try {
+      res = await Page.post({ api: 'ng', t: DATA.token, days: days });
+    } catch (e) {
+      res = { ok: false, error: Page.errText(e) };
+    }
+    buttons.forEach(b => b.disabled = false);
+    if (!res.ok) {
+      showMsg('err', '送信できませんでした：' + (res.error || '不明なエラー'));
+      return;
+    }
+    const list = res.days.length ? res.days.map(x => DATA.month + '/' + x).join('、') : 'なし';
+    showMsg('ok', '送信しました。\nNG日：' + list + '\n提出状況：' + res.submitted + '/' + res.total + '名\n\n変更する場合は、選び直して再送信してください。');
+    document.getElementById('close').hidden = !Page.canClose();
+  }
+
+  function showMsg(type, text) {
+    const m = document.getElementById('msg');
+    m.className = 'msg ' + type;
+    m.textContent = text;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+</script>
+</body>
+</html>
